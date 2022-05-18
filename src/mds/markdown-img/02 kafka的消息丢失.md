@@ -16,9 +16,7 @@ kafka作为一个Producer-Broker-Consumer架构的消息队列，丢失消息的
 
 # 5-Producer到Broker
 
-图
-
-以下是Kafka在Producer消息传递过程中一个**最全面的、完整**的流程（但是通过配置省略部分操作）
+![cbb5d1f0ef7f4befb986e4eb6b5e42b](https://user-images.githubusercontent.com/48977889/169038097-f42ca1d6-be45-4afa-8ba2-755a35bf4519.png)以下是Kafka在Producer消息传递过程中一个**最全面的、完整**的流程（但是通过配置省略部分操作）
 
 1. Producer获取Topic的Leader信息（如所在Broker，端口等）。
 2. Producer将消息发给Leader。
