@@ -30,7 +30,7 @@ kafka作为一个Producer-Broker-Consumer架构的消息队列，丢失消息的
 对于Producer确认消息是否成功传送的过程中，**可以在Producer**通过request.required.acks进行3种配置：
 
 1. request.required.acks=0：只管发，不关心Broker是否给出ACK。处理步骤：1、2。
-2. request.required.acks=1：Broker将消息持久化后，就返回ACK，不需要等Follower同步好消息。处理步骤：1、2、3.1、4。
+2. request.required.acks=1：Broker将消息持久化后，就返回ACK，不需要等Follower同步好消息。处理步骤：1、2、3.1、3.2、4。
 3. request.required.acks=-1或者all：Broker将消息持久化后，还需要等min.insync.replicas个follower同步完消息，再返回ACK。处理步骤：1、2、3.1、3.2、3.3、3.4、4。
 
 当消息在Producer到Broker的过程中，可能会出现以下2种丢失情况：
@@ -45,7 +45,9 @@ kafka作为一个Producer-Broker-Consumer架构的消息队列，丢失消息的
 
 # 6-Producer发送消息前
 
-对于Producer发送到Broker的过程中，有同步和异步两种方式。通过producer.type这个配置确定，默认情况下使用sync，也就是同步方式。其实同步方式和异步方式是针对**sender线程**来说的，同步方式下，sender需要等待broker的返回结果（具体看知识点5的ack策略）后，发送行为才结束。而异步模式下，**业务线程**发送消息其实是将消息推到InFlightRequest队列里，这个队列可以理解为buffer。sender线程会根据**特定规则**将队列里的数据分批次发给broker，当然，这一批次的ack也会通过回调的方式进行处理，也就是说知识点5的ack和这里的异步是不冲突的。
+对于Producer发送到Broker的过程中，有同步和异步两种方式。通过producer.type这个配置确定，默认情况下使用sync，也就是同步方式。其实同步方式和异步方式是针对**业务线程**来说的，同步方式下，业务线程需要等待broker的返回结果（具体看知识点5的ack策略）后，发送行为才结束，**在发送行为结束之前业务线程不会再往InFlightRequest队列里推消息**。
+
+而异步模式下，**业务线程**发送消息其实是将消息推到InFlightRequest队列里，这个队列可以理解为buffer。sender线程会根据**特定规则**将队列里的数据分批次发给broker，当然，这一批次的ack也会通过回调的方式进行处理，也就是说知识点5的ack和这里的异步是不冲突的。
 
 那么说到**特定规则**，可以通过4个参数配置：
 
