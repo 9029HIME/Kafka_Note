@@ -30,14 +30,14 @@ kafka作为一个Producer-Broker-Consumer架构的消息队列，丢失消息的
 对于Producer确认消息是否成功传送的过程中，**可以在Producer**通过request.required.acks进行3种配置：
 
 1. request.required.acks=0：只管发，不关心Broker是否给出ACK。处理步骤：1、2。
-2. request.required.acks=1：Broker将消息持久化后，就返回ACK，不需要等Follower同步好消息。处理步骤：1、2、3.1、3.2、4。
+2. request.required.acks=1：Broker将消息持久化后，就返回ACK，不需要等Follower同步好消息。处理步骤：1、2、3.1、4。
 3. request.required.acks=-1或者all：Broker将消息持久化后，还需要等min.insync.replicas个follower同步完消息，再返回ACK。处理步骤：1、2、3.1、3.2、3.3、3.4、4。
 
 当消息在Producer到Broker的过程中，可能会出现以下2种丢失情况：
 
 1. 如果acks=0，因网络故障没有发送到Leader处，消息就丢了。
 2. 如果acks=1，消息到了Leader那，Leader写入Cache、给Producer回复了ACK后，Leader挂了。此时选举出来的新Leader却没有同步到这个消息，消息就丢了。
-
+3. 如果ack=-1或者all，消息到了Leader那，有一定数量的Follower同步到消息后，Leader挂了，此时选举出来的新Leader并不是前面同步到该消息的Follower，消息就丢了。
 也可能会出现以下2种重发情况：
 
 1. 如果acks=1，Leader回复了ACK，但由于网络故障Producer在规定时间内没有收到ACK，于是向Leader重新发送消息。

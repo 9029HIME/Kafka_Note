@@ -17,7 +17,7 @@ Broker在连接Zookeeper后，Zookeeper主要会存以下元数据：
 3. 假设Broker0成为Controller，那么它会从zk拿到集群里的所有Broker信息，然后为每个Partition选举Leader。
 4. 为Parition选举Leader的规则是：以Replica在ISR中存活为前提，按照Replica在AR中的顺序为优先级选择。假设Partition有3个Replica 0 1 2，它的AR是[1,0,2]，但是ISR是[0,2]。那么最终会选出Replica 0作为Leader。**这里以Replica 1为Leader举例**。
 5. 选出Leader后，Broker0将这些信息告诉zk保管起来。接下来其他Broker的Controller模块会主动从zk获取Parition的主从信息。
-6. 当Broker0监听到这个Leader所在的Broker挂了后，会获取ISR列表和AR列表重新选举Leader（重复第4步），然后更新Leader信息到zk，接着整个集群都会认为Replica 0是这个Partition的新Leader了。
+6. Leader所在的Broker后，zk会监控到并更新/brokers/ids/的结构，当Broker0监听/brokers/ids/目录发现Leader挂了后，会获取ISR列表和AR列表重新选举Leader（重复第4步），然后更新Leader信息到zk，接着整个集群都会认为Replica 0是这个Partition的新Leader了。
 
 **但是！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！如果集群的Controller挂掉了，又该谁去监听呢？**
 
@@ -69,3 +69,46 @@ Broker在连接Zookeeper后，Zookeeper主要会存以下元数据：
 随着时间的推移，Replica2所在的Broker发生了意外宕机，导致Replica2超过30s未向Replica 0发起同步请求，那么Replica2就被踢出ISR列表，此时Partition的AR是[0,1,2]，ISR是[0,1]，AR是[2]。
 
 **总的来说，AR = ISR + OR。**
+
+# 故障转移后，消息的状态
+
+## 22-LEO与HW
+
+要了解故障转移后消息的状态，首先要明白2个概念：LEO（Log End Offset）和HW（High Watermark）。假设某个Partition的Replica分布如下图所示：
+
+![image](https://user-images.githubusercontent.com/48977889/174529192-253537a4-faf3-4fd7-95a2-a1d37394ba9c.png)
+
+LEO是针对每个ISR里的Replica来说的，代表这个Replica的最后一个offset，即offset下标值 + 1。
+
+而HW是针对一个Partition的ISR里所有Replica来说的，代表所有Replica里最低的一位LEO。
+
+如上图所示，这个Partition在Broker0 1 2所在的Replica的LEO分别是8、5、7。这个PartitionHW是5。**对于消费者来说，这个Partition里能见到的最大消息偏移量其实是HW。**
+
+## 23-Follower故障
+
+假设知识点22示例中，Broker2挂掉了，会进行以下步骤：
+
+1. 将Broker2剔出ISR。此时Broker的LEO是7，整个Partition的HW是5
+
+2. Broker1和Broker0继续同步数据。
+
+3. 当Broker2恢复后，先从磁盘读取宕机前的HW是多少，发现是5。于是将5之后的数据全部清掉，并从5开始重新和Leader同步。
+
+   ![image](https://user-images.githubusercontent.com/48977889/174530276-d76649d2-b949-48d8-87bb-0789aa03f16a.png)
+
+4. 当Broker2发现自己的LEO ≥ Partition的HW（上图是8）后，就可以重新加入ISR了。
+
+## 24-Leader故障
+
+![image](https://user-images.githubusercontent.com/48977889/174529192-253537a4-faf3-4fd7-95a2-a1d37394ba9c.png)
+
+还是以这张图为例，假如此时Leader挂了，会进行以下处理：
+
+1. 根据知识点19的选举流程，选出一个新Leader，假设新Leader选择为Broker1
+
+2. 此时Broker1作为新Leader，Broker2作为Follower需要拉取数据，但发现自己的LEO ＞ Leader的LEO，此时Broker2会将超出的部分清理掉，重新进行同步：
+
+   ![image](https://user-images.githubusercontent.com/48977889/174530645-fae13d00-814f-4636-9a3f-bcb29aeac62e.png)
+
+由此可见，当Leader挂掉后，故障转移只能保证Replica之间的数据一致性，但不能保证数据可靠性。**想要达到数据可靠性，还得基于知识点5的min.insync.replicas + ack=all的配置，保证所有Follower都同步了才ACK。**
+
