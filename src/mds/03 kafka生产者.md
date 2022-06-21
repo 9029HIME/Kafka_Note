@@ -204,7 +204,7 @@ Producer的幂等性指的是Producer不论给Broker**重发**多少次**相同�
 
 Kafka只能保证同一个Partition内，message被消费是有序的，**如果消费者消费了多个Partition的message，kafka是不能保证Partition之间的数据是被有序消费的**。
 
-当然，即使同一个Partition保持幂等性也是有条件的，需要将Producer参数max.in.flight.requests.per.connection设的值≤5。Broker会将Producer在发过来的**最近5个Request数据**缓存起来，并且Broker将缓存里的message刷盘之前会通过知识点16的SeqNumber进行排序，一旦发现后面的数据是乱序的，Broker就会等待顺序正确的message到来。当丢失的message被接收后，Broker会进行一次重排序，再刷盘。
+当然，即使同一个Partition保持有序性也是有条件的，首先要开启幂等性，其次需要将Producer参数max.in.flight.requests.per.connection设的值≤5。Broker会将Producer在发过来的**最近5个Request数据**缓存起来，并且Broker将缓存里的message刷盘之前会通过知识点16的SeqNumber进行排序，一旦发现后面的数据是乱序的，Broker就会等待顺序正确的message到来。当丢失的message被接收后，Broker会进行一次重排序，再刷盘。
 
 但是这个5是一个固定值，如果Producer将max.in.flight.requests.per.connection的值设为＞5，Producer发了6个未ack的Request过去，就有可能导致Broker排序失败，从而导致乱序（结合知识点9）：
 

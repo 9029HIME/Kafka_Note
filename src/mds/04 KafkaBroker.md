@@ -187,3 +187,31 @@ kafka虽然提供了消息持久化，但消息总不能一直持久化在硬盘
    ![image](https://github.com/assets/48977889/bd36a988-3d7b-4f0e-b0a0-26718845235d)
 
    进行压缩后可以看到，消息连同offset一并删除了，如果消费者此时消费offset = 6的数据，会直接消费offset = 7的消息。
+
+# Broker的高效读与高效写
+
+## 29-高效写
+
+消费者在获取消息时Broker采用稀疏索引的方式定位，也加快了消息的消费速度。除此之外，Kafka采用了**顺序写磁盘**的方案，对Producer写到Partition的消息会写入log文件中，并且后续的写入是不停追加到log文件末端，省去了随机写的磁头寻址时间。并且顺序写还保证了一个特性：消费是根据先来后到依次写入磁盘（知识点17）中，因此一个offset就能快速定位消息的位置。
+
+## 30-高效读
+
+Kafka采用页缓存+零拷贝的技术向消费者发送消息。对于Broker在应用层根本不关心数据长什么样，也不会对数据进行处理，**数据的处理依赖Producer和Consumer的拦截器、序列化器、反序列化器（知识点9）**。因此对于Broker来说可以直接将内核空间里的消息直接transferTo网卡，发送给Consumer:
+
+![img](https://user-images.githubusercontent.com/48977889/174797988-fd4cae32-edde-4e9e-a319-231c9fd3f408.png)
+
+左图是如果不使用零拷贝技术的场景：
+
+1. Broker从内核态缓存Page Cache获取消息，如果获取不到，则先从磁盘读取消息到内核态缓存。
+2. Broker将内核态缓存的消息copy到用户态空间。
+3. Broker将用户态空间的消息拷贝到内核态缓存Socket Cache。
+4. Broker将3.操作后，处于Socket Cache的消息发送到网卡，最终发给Consumer
+
+但是上面都说了，Broker不会参与消息的处理，那还要拷贝一次到用户态干嘛呢？
+
+所以直接采用右图的步骤：
+
+1. Broker从内核态缓存Page Cache获取消息，如果获取不到，则先从磁盘读取消息到内核态缓存。
+2. 调用transferTo，将内核态缓存中的消息直接发给Consumer。
+
+**这一点和NIO使用的零拷贝是一样的**
