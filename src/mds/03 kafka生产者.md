@@ -212,6 +212,8 @@ Broker在收到消息后会判断**Producer的SeqNumber**和**自己维护的Seq
 
 而Producer也是通过异常来判断**是该重发呢？还是不发呢？**
 
+![img](https://user-images.githubusercontent.com/48977889/174811221-e21d5c88-a159-4357-b1ac-6422abe7f1e6.png)
+
 ## 17-消息的有序性
 
 Kafka只能保证同一个Partition内，message被消费是有序的，**如果消费者消费了多个Partition的message，kafka是不能保证Partition之间的数据是被有序消费的**。
