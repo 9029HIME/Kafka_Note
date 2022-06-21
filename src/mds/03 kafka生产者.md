@@ -196,16 +196,28 @@ public class MyPartitioner implements Partitioner {
 
 ## 16-Producer的幂等性
 
-Producer的幂等性指的是Producer不论给Broker**重发**多少次**相同的message**，Broker都只会刷盘1条，重复的message会直接丢掉。那Broker根据什么来判断1个message是否重复呢？是PID、Partition、SeqNumber。其中PID是Producer和Broker连接时生成的会话ID，也就是说Producer和Broker其中一个重启后，PID就会发生变化。SeqNumber指的是消息的序列号，它是单调递增的。所以kafka的幂等性**只能在同一个会话、同一个Partition内保证**：
+Producer的幂等性指的是Producer不论给Broker**重发**多少次**相同的message**，Broker都只会刷盘1条，重复的message会直接丢掉。那Broker根据什么来判断1个message是否重复呢？是PID、Topic、Partition、SeqNumber。其中PID是Producer和Broker连接时生成的会话ID，也就是说Producer和Broker其中一个重启后，PID就会发生变化。SeqNumber指的是消息的序列号，它是单调递增的。所以kafka的幂等性**只能在同一个会话、同一个Partition内保证**：
 
 ![image](https://user-images.githubusercontent.com/48977889/170862911-34451640-5655-47c1-bd24-2e76e8f94927.png)
+
+开启幂等性首先要在Producer配置enable.idempotence = true，此时acks就是all。当Producer和Broker建立连接后，Broker发现Producer开启了幂等性，于是也为<PID,Topic,Partition>这个三元组维护一个SeqNumber，每写入1条消息到PageCache后将这个SeqNumber递增1。
+
+Producer在发送消息时，也会将Producer维护的<PID,Topic,Partition>的SeqNumber传给Broker，因为Producer是采用Batch的方式发送消息，因此Producer实惠给Batch的第一条消息设置SeqNumber，同Batch内后面的消息可以通过这个SeqNumber递增算出来。
+
+Broker在收到消息后会判断**Producer的SeqNumber**和**自己维护的SeqNumber**。主要有3种情况：
+
+1. Ps=Bs+1，此时Broker会接收这条消息。
+2. Ps-Bs>1，说明Broker此时还有**当前消息**未写入，**之后的消息**就到了，即乱序，此时Broker会拒绝该消息，向Producer抛出InvalidSequenceNumber异常。
+3. Ps-Bs<=0，说明Broker已经将**当前消息**写入了，但**当前消息**又发了一遍，此时Broker拒绝该消息，向Producer抛出DuplicateSequenceNumber异常。
+
+而Producer也是通过异常来判断**是该重发呢？还是不发呢？**
 
 ## 17-消息的有序性
 
 Kafka只能保证同一个Partition内，message被消费是有序的，**如果消费者消费了多个Partition的message，kafka是不能保证Partition之间的数据是被有序消费的**。
 
-当然，即使同一个Partition保持有序性也是有条件的，首先要开启幂等性，其次需要将Producer参数max.in.flight.requests.per.connection设的值≤5。Broker会将Producer在发过来的**最近5个Request数据**缓存起来，并且Broker将缓存里的message刷盘之前会通过知识点16的SeqNumber进行排序，一旦发现后面的数据是乱序的，Broker就会等待顺序正确的message到来。当丢失的message被接收后，Broker会进行一次重排序，再刷盘。
+当然，即使同一个Partition保持有序性也是有条件的，首先要开启幂等性，其次需要将Producer参数max.in.flight.requests.per.connection设的值≤5。Broker会将Producer（1个Pid）在发往同1个Partition的**最近5个Request数据**缓存起来，并且Broker将缓存里的message刷盘之前会通过知识点16的SeqNumber进行排序，一旦发现后面的数据是乱序的，Broker就会等待顺序正确的message到来。当丢失的message被接收后，Broker会进行一次重排序，再刷盘。
 
-但是这个5是一个固定值，如果Producer将max.in.flight.requests.per.connection的值设为＞5，Producer发了6个未ack的Request过去，就有可能导致Broker排序失败，从而导致乱序（结合知识点9）：
+但是这个5是一个固定值（直接硬编码写死的），如果Producer将max.in.flight.requests.per.connection的值设为＞5，Producer发了6个未ack的Request过去，Broker会将最早到的那个Request清除掉，并向就有可能导致Broker排序失败，从而导致乱序（结合知识点9）：
 
 ![image](https://user-images.githubusercontent.com/48977889/170863651-53271903-02ac-416f-8be6-b00cd5bb8a60.png)
