@@ -112,3 +112,78 @@ LEO是针对每个ISR里的Replica来说的，代表这个Replica的最后一个
 
 由此可见，当Leader挂掉后，故障转移只能保证Replica之间的数据一致性，但不能保证数据可靠性。**想要达到数据可靠性，还得基于知识点5的min.insync.replicas + ack=all的配置，保证所有Follower都同步了才ACK。**
 
+## 25-故障转移后，Replica分配不均匀
+
+# 消息存储
+
+## 26-消息在文件系统上的存储
+
+![image](https://github.com/assets/48977889/2b0f974f-c8ec-49c8-8d5d-ce9cc415e195)
+
+1个Topic（逻辑）有多个Partition，1个Partition存储消息时，会落实到1个log（逻辑进行存储），1个逻辑log对应多个segment，1个segment包含3个文件:log文件，index文件，timeindex文件。**同一个Partitons的多个segment的文件都存储在1个文件夹里，这个文件夹的命名一般是topic名➕partition序号**。
+
+看一下虚拟机上的文件结构：
+
+```bash
+kjg@kjg-PC:/usr/local/kafka/kafka_2.12-3.0.0/data/Hello-0$ ll
+总用量 12
+-rw-r--r-- 1 kjg staff 10485760 6月  19 14:17 00000000000000000014.index
+-rw-r--r-- 1 kjg staff        0 6月  19 10:46 00000000000000000014.log
+-rw-r--r-- 1 kjg staff       10 6月  19 14:17 00000000000000000014.snapshot
+-rw-r--r-- 1 kjg staff 10485756 6月  19 14:17 00000000000000000014.timeindex
+-rw-r--r-- 1 kjg staff        4 6月  19 10:45 leader-epoch-checkpoint
+-rw-r--r-- 1 kjg staff       43 5月  29 14:23 partition.metadata
+kjg@kjg-PC:/usr/local/kafka/kafka_2.12-3.0.0/data/Hello-0$ pwd
+/usr/local/kafka/kafka_2.12-3.0.0/data/Hello-0
+```
+
+1个segment的消息文件命名有点奇怪，比如上面的00000000000000000014，这代表着这个segment的第一条消息偏移量是14，消息文件都是以这种规则进行命名的，方便定位消息。
+
+## 27-如何通过消息文件定位消息？
+
+![image](https://github.com/assets/48977889/638bf205-b03c-42dc-986c-ad330fd03d50)
+
+首先要明确2点：
+
+1. kafka采用**稀疏索引**策略，每写入4KB的消息（通过log.index.interval.bytes配置），会往index文件里写入1条记录。
+2. index文件只会存储**相对offset**和position。
+
+假设我要定位offset = 600的消息：
+
+1. 先通过600这个offset定位到消息在00000000000000000522.log这个文件里，那么就要找到00000000000000000522的index文件。因为522 < 600 < 1005。
+2. 通过index文件存储的相对offset + 文件offset，定位到消息在相对offset = 65和117这2个索引之间。因为522 + 65 = 587，522 + 117 = 639，并且587 < 600 < 639。
+3. 确定了消息在position = 6410 到 13795后，在log文件里找到position=6410的记录，从上往下遍历，就会找到offset = 600的消息。
+
+假设我要定位offset = 523的消息：
+
+1. 先通过600这个offset定位到消息在00000000000000000522.log这个文件里，那么就要找到00000000000000000522的index文件。因为522 < 523 < 1005。
+2. 通过index文件存储的相对offset + 文件offset，定位到消息在相对offset 65的索引之前。因为522 + 65 = 587，并且523  < 587
+3. 确定了消息在position = 6410之前，在log文件里找到position = 0的记录，从上往下遍历，就会找到offset = 523的消息。
+
+## 28-消息清除策略
+
+kafka虽然提供了消息持久化，但消息总不能一直持久化在硬盘上，因此kafka有一套持久化消息的清除策略。默认情况下，kafka的消息保存时间为7天，超过这个时间会启动清除策略，那通过什么来判断消息超过7天呢？其实是通过timeindex文件。 
+
+当然，消息保存时间也是可以通过配置修改：
+
+1. log.retention.hours：保留小时，默认是168，即7天。
+2. log.retention.minutes：保留分钟。
+3. log.retention.ms：保留毫秒。
+4. log.retention.check.interval.ms：通过这个配置来轮询，查看消息是否超时，默认是5分钟。
+5. 如果同时设置了小时和分钟，会采用哪种呢？答案是：**时间范围越细，优先级越高，即采用分钟。**
+
+对于过期消息，主要有两种处理方式：
+
+1. 删除
+
+   通过log.cleanup.policy=delete设置，以segment的timeindex文件里的**最大时间戳为准**，如果（最大时间戳 到现在的时间间隔） ＞ 时间阈值，则会删除对应segment的消息文件。所谓最大时间戳，如果这个segment有部分消息还是新的，那么就不考虑进删除范围里，如下图的segment2：
+
+   ![image](https://github.com/assets/48977889/1f97f205-57d5-4fbb-bedd-0791bd4fbe2f)
+
+2. 压缩：
+
+   通过log.cleanup.policy=compact设置，将过期消息里相同Key的消息进行压缩，只保留最后一个版本（**注意！！！这里同Key不同Value的消息之间本质是不同的消息，只是Key相同**），这样之前的版本就丢弃了，仅保留最新的消息：
+
+   ![image](https://github.com/assets/48977889/bd36a988-3d7b-4f0e-b0a0-26718845235d)
+
+   进行压缩后可以看到，消息连同offset一并删除了，如果消费者此时消费offset = 6的数据，会直接消费offset = 7的消息。
