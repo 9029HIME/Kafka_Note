@@ -12,6 +12,11 @@ Consumer是必须要指定消费者组的，即使是1个单独的Consumer，它
 
 # 32-消费者组初始化流程
 
+![img](https://user-images.githubusercontent.com/48977889/175037083-602ebf97-8203-4750-9104-44e27910fd78.png)
+
+1. 首先要明确2个概念：每一个Broker都有1个Coordinator组件，1个kafka集群有50个consumer_offsets分片，这50个分片均匀分布在不同Broker上。
+2. 消费者组初始化时，首先要确定一个coordinator进行协调，这一步有点像Broker初始化时选一个Controller一样。那么该选哪一个coordinator呢？有一个公式：hashCode(groupid) % consumer_offsets分片数。例如groupid的hashcode=1（假设），offsets分片数是50，那么这个消费组就会选择1%50=1，**即1号offset分片所在的Broker的coordinator进行协调**。这个coordinator会从消费者组里选一个Leader出来，进行下一步协商。
+
 # 33-消费者消费过程
 
 # 消费者消费实例代码
