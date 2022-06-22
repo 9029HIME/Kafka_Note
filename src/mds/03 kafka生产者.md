@@ -202,7 +202,31 @@ Producer的幂等性指的是Producer不论给Broker**重发**多少次**相同�
 
 开启幂等性首先要在Producer配置enable.idempotence = true，此时acks就是all。当Producer和Broker建立连接后，Broker发现Producer开启了幂等性，于是也为<PID,Topic,Partition>这个三元组维护一个SeqNumber，每写入1条消息到PageCache后将这个SeqNumber递增1。
 
-Producer在发送消息时，也会将Producer维护的<PID,Topic,Partition>的SeqNumber传给Broker，因为Producer是采用Batch的方式发送消息，因此Producer实惠给Batch的第一条消息设置SeqNumber，同Batch内后面的消息可以通过这个SeqNumber递增算出来。
+1. 首先得明确一点：Batch队列是针对1个Partition的，而Request队列是针对Broker的，也就是说，同1个Request队列里的数据可能来自多个Batch，但是1个Request对应1个Batch（猜测，网上没有具体的文章描述对应关系）。
+
+2. 一般来说Request队列里会限制最多发送5个未响应请求。也就是说，这5个未响应请求可能是发往多个Partition的，以下的示例只考虑Request队列发往1个Partition的情况。
+
+3. Producer开启幂等性后，和Broker建立连接时会生成一个PID，PID最终是存放在ZK上。注意这个PID是会话有效，当Producer或Broker重启后，PID会失效。
+
+4. 开启幂等性后，Producer和Broker都会为<PID,Topic,Partition>这个三元组维护1个sequence number，消息是以Batch为单位发送的，其实Producer会为Batch的第1条消息设置sequence number，后面的消息都可以根据这个sequence number递增算出来。对于Broker来说，这个三元组里的消息每写入PageCache1次，sequence number就会递增1。
+
+5. Broker会为<PID,Topic,Partition>这个三元组缓存最近的5条Batch，这个5是写死的，网上有文章说5是经过测试得到的最佳值，和GC_AGE=15差不多。只需关心是个魔法值即可。然后就是Ps和Bs的比对逻辑了。
+
+6. 注意！！！Ps和Bs的比较是基于三元组缓存进行的，如果三元组缓存满了，Broker还接受到消息，就会将三元组缓存里最旧的一条消息清除，这条被清除的消息如果没有持久化，就不会响应ack了（如果被持久化了还是会ack，毕竟只是缓存里不存在而已，但消息还是被正常接受的）。
+
+7. 那么如果MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION＞5的话，比如6，Producer发送6个请求
+  Producer  →r1、r2、r3、r4、r5、r6→ Broker
+
+  第6个请求来之前：
+
+  Producer  → Broker[r1、r2、r3、r4、r5]
+
+  当第6个请求来到之后，broker会从缓存上清除掉r1：
+
+  Producer  → Broker[r2、r3、r4、r5、r6]
+
+  如果r1被成功写入log，返回了ACK倒还好，最怕是要么没写入log，要么ack没成功返回给Producer，毫无疑问，Producer在等待ack超时后，会重发r1。
+  如果没开启幂等性，Broker会认为r1是新消息，继续写入log。如果开启了幂等性，Broker会将r1和三元组缓存中的5个请求作比较，当发现r1和缓存中的请求都不一致，此时Broker只会给Producer返回OutOfOrderSequenceException。Producer接受到异常后会再次触发重试，直到超出重试次数，引起了没必要的反复请求。如果不开幂等性，r1还能继续收到，顶多Consumer可能会消费多次而已，但开启幂等性后就直接收不到r1了。**所以开启幂等性后，MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION一定要≤5！！！！**
 
 Broker在收到消息后会判断**Producer的SeqNumber**和**自己维护的SeqNumber**。主要有3种情况：
 
