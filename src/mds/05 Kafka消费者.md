@@ -139,7 +139,152 @@ public void testConsumerOnePartition(){
 
 ## 36-消费者组消费某个主题
 
+后来我发现World这个Topic在初始化的时候只有1个分区，这样不好测试
 
+```bash
+kjg@kjg-PC:/usr/local/kafka/kafka_2.12-3.0.0/bin$ ./kafka-topics.sh --bootstrap-server localhost:9092  --describe --topic World
+Topic: World    TopicId: 5aBCth8iQgKYDYQImj2Cyw PartitionCount: 1       ReplicationFactor: 3    Configs: segment.bytes=1073741824
+        Topic: World    Partition: 0    Leader: 0       Replicas: 0,1,2 Isr: 1,0,2
+```
+
+于是手动修改一下World的分区数，注意！！！分区数只能扩张，不能缩小：
+
+```bash
+kjg@kjg-PC:/usr/local/kafka/kafka_2.12-3.0.0/bin$ ./kafka-topics.sh --bootstrap-server localhost:9092 -alter --partitions 3 --topic World
+kjg@kjg-PC:/usr/local/kafka/kafka_2.12-3.0.0/bin$ ./kafka-topics.sh --bootstrap-server localhost:9092  --describe --topic World
+Topic: World    TopicId: 5aBCth8iQgKYDYQImj2Cyw PartitionCount: 3       ReplicationFactor: 3    Configs: segment.bytes=1073741824
+        Topic: World    Partition: 0    Leader: 0       Replicas: 0,1,2 Isr: 1,0,2
+        Topic: World    Partition: 1    Leader: 1       Replicas: 1,2,0 Isr: 1,2,0
+        Topic: World    Partition: 2    Leader: 2       Replicas: 2,0,1 Isr: 2,0,1
+```
+
+1. 先定义好Producer代码：
+
+   ```java
+   @Test
+   public void send2ConsumerGroup() throws ExecutionException, InterruptedException {
+       // 创建producer
+       KafkaProducer<String,String> producer = new KafkaProducer<String, String>(properties);
+   
+       String msg = "Kafka,you are the world :%s";
+       String key = "key :%s";
+   
+       AtomicInteger tag = new AtomicInteger(0);
+   
+       while(true) {
+   
+           Thread.sleep(500);
+   
+           producer.send(new ProducerRecord<>(
+                   "World", String.format(key,tag), String.format(msg,tag)
+           ), new Callback() {
+               @Override
+               public void onCompletion(RecordMetadata recordMetadata, Exception e) {
+                   System.out.println("callback使用的线程是：" + Thread.currentThread().getName());
+                   String topic = recordMetadata.topic();
+                   int partition = recordMetadata.partition();
+                   System.out.println(String.format("给主题%s的分区%s发送了消息：%s", topic, partition,String.format(msg,tag.get())));
+               }
+           });
+   
+           tag.getAndIncrement();
+   
+       }
+   }
+   ```
+
+2. 准备3个消费者实例：
+
+   ```java
+   /**
+    * 消费者1
+    */
+   @Test
+   public void consumer1(){
+       String topic = "World";
+       KafkaConsumer<String,String> kafkaConsumer = new KafkaConsumer<String, String>(properties);
+       ArrayList<String> topics = new ArrayList<>();
+       topics.add(topic);
+       kafkaConsumer.subscribe(topics);
+   
+       while (true){
+           ConsumerRecords<String, String> poll = kafkaConsumer.poll(Duration.ofSeconds(1));
+           for (ConsumerRecord<String, String> record : poll) {
+               String key = record.key();
+               String value = record.value();
+               int partition = record.partition();
+               System.out.println(String.format("收到topic=%s的消息，它的key是%s，value是%s，partition是%s",topic,key,value,partition));
+           }
+       }
+   }
+   
+   @Test
+   public void consumer2(){
+       String topic = "World";
+       KafkaConsumer<String,String> kafkaConsumer = new KafkaConsumer<String, String>(properties);
+       ArrayList<String> topics = new ArrayList<>();
+       topics.add(topic);
+       kafkaConsumer.subscribe(topics);
+   
+       while (true){
+           ConsumerRecords<String, String> poll = kafkaConsumer.poll(Duration.ofSeconds(1));
+           for (ConsumerRecord<String, String> record : poll) {
+               String key = record.key();
+               String value = record.value();
+               int partition = record.partition();
+               System.out.println(String.format("收到topic=%s的消息，它的key是%s，value是%s，partition是%s",topic,key,value,partition));
+           }
+       }
+   }
+   
+   @Test
+   public void consumer3(){
+       String topic = "World";
+       KafkaConsumer<String,String> kafkaConsumer = new KafkaConsumer<String, String>(properties);
+       ArrayList<String> topics = new ArrayList<>();
+       topics.add(topic);
+       kafkaConsumer.subscribe(topics);
+   
+       while (true){
+           ConsumerRecords<String, String> poll = kafkaConsumer.poll(Duration.ofSeconds(1));
+           for (ConsumerRecord<String, String> record : poll) {
+               String key = record.key();
+               String value = record.value();
+               int partition = record.partition();
+               System.out.println(String.format("收到topic=%s的消息，它的key是%s，value是%s，partition是%s",topic,key,value,partition));
+           }
+       }
+   }
+   ```
+
+3. 先启动1个Consumer，可以看到这个Consumer把3个Partition的消息都给消费了：
+
+   ```
+   callback使用的线程是：kafka-producer-network-thread | producer-1
+   给主题World的分区0发送了消息：Kafka,you are the world :1
+   callback使用的线程是：kafka-producer-network-thread | producer-1
+   给主题World的分区2发送了消息：Kafka,you are the world :2
+   callback使用的线程是：kafka-producer-network-thread | producer-1
+   给主题World的分区0发送了消息：Kafka,you are the world :3
+   callback使用的线程是：kafka-producer-network-thread | producer-1
+   给主题World的分区2发送了消息：Kafka,you are the world :4
+   callback使用的线程是：kafka-producer-network-thread | producer-1
+   给主题World的分区2发送了消息：Kafka,you are the world :5
+   callback使用的线程是：kafka-producer-network-thread | producer-1
+   给主题World的分区1发送了消息：Kafka,you are the world :6
+   ```
+
+   ```
+   收到topic=World的消息，它的key是key :0，value是Kafka,you are the world :0，partition是0
+   收到topic=World的消息，它的key是key :1，value是Kafka,you are the world :1，partition是2
+   收到topic=World的消息，它的key是key :2，value是Kafka,you are the world :2，partition是0
+   收到topic=World的消息，它的key是key :3，value是Kafka,you are the world :3，partition是2
+   收到topic=World的消息，它的key是key :4，value是Kafka,you are the world :4，partition是2
+   收到topic=World的消息，它的key是key :5，value是Kafka,you are the world :5，partition是1
+   收到topic=World的消息，它的key是key :6，value是Kafka,you are the world :6，partition是0
+   ```
+
+4. 那么试着先启动Consumer1，等一段时间后再启动Consumer2：
 
 # 分区分配与再平衡
 

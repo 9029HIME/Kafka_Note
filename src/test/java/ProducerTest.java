@@ -6,6 +6,7 @@ import org.junit.Test;
 
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProducerTest {
 
@@ -42,5 +43,48 @@ public class ProducerTest {
         }).get();
         System.out.println("我已经结束发送了："+Thread.currentThread().getName());
         producer.close();
+    }
+
+
+    @Test
+    public void send2ConsumerGroup() throws ExecutionException, InterruptedException {
+        // 创建producer
+        KafkaProducer<String,String> producer = new KafkaProducer<String, String>(properties);
+
+        String msg = "Kafka,you are the world :%s";
+        String key = "key :%s";
+
+        AtomicInteger tag = new AtomicInteger(0);
+
+        while(true) {
+
+            Thread.sleep(500);
+
+            producer.send(new ProducerRecord<>(
+                    "World", String.format(key,tag), String.format(msg,tag)
+            ), new Callback() {
+                @Override
+                public void onCompletion(RecordMetadata recordMetadata, Exception e) {
+                    System.out.println("callback使用的线程是：" + Thread.currentThread().getName());
+                    String topic = recordMetadata.topic();
+                    int partition = recordMetadata.partition();
+                    System.out.println(String.format("给主题%s的分区%s发送了消息：%s", topic, partition,String.format(msg,tag.get())));
+                }
+            });
+
+            tag.getAndIncrement();
+
+        }
+    }
+
+    @Test
+    public void cal() throws InterruptedException {
+        int a = 3;
+        Integer b = 1;
+        while (true){
+            Thread.sleep(1000);
+            System.out.println(b%a);
+            b++;
+        }
     }
 }
