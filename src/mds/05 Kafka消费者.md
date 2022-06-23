@@ -286,6 +286,97 @@ Topic: World    TopicId: 5aBCth8iQgKYDYQImj2Cyw PartitionCount: 3       Replicat
 
 4. 那么试着先启动Consumer1，等一段时间后再启动Consumer2：
 
+   Consumer1：
+
+   ```
+   收到topic=World的消息，它的key是key :24，value是Kafka,you are the world :24，partition是1
+   收到topic=World的消息，它的key是key :25，value是Kafka,you are the world :25，partition是1
+   收到topic=World的消息，它的key是key :26，value是Kafka,you are the world :26，partition是1
+   收到topic=World的消息，它的key是key :27，value是Kafka,you are the world :27，partition是0
+   收到topic=World的消息，它的key是key :28，value是Kafka,you are the world :28，partition是2
+   收到topic=World的消息，它的key是key :29，value是Kafka,you are the world :29，partition是2
+   收到topic=World的消息，它的key是key :30，value是Kafka,you are the world :30，partition是2
+   收到topic=World的消息，它的key是key :34，value是Kafka,you are the world :34，partition是2
+   收到topic=World的消息，它的key是key :35，value是Kafka,you are the world :35，partition是2
+   收到topic=World的消息，它的key是key :39，value是Kafka,you are the world :39，partition是2
+   收到topic=World的消息，它的key是key :42，value是Kafka,you are the world :42，partition是2
+   收到topic=World的消息，它的key是key :46，value是Kafka,you are the world :46，partition是2
+   收到topic=World的消息，它的key是key :50，value是Kafka,you are the world :50，partition是2
+   收到topic=World的消息，它的key是key :51，value是Kafka,you are the world :51，partition是2
+   收到topic=World的消息，它的key是key :55，value是Kafka,you are the world :55，partition是2
+   ```
+
+   Consumer2：
+
+   ```
+   收到topic=World的消息，它的key是key :31，value是Kafka,you are the world :31，partition是1
+   收到topic=World的消息，它的key是key :32，value是Kafka,you are the world :32，partition是1
+   收到topic=World的消息，它的key是key :33，value是Kafka,you are the world :33，partition是0
+   收到topic=World的消息，它的key是key :36，value是Kafka,you are the world :36，partition是1
+   收到topic=World的消息，它的key是key :37，value是Kafka,you are the world :37，partition是1
+   收到topic=World的消息，它的key是key :38，value是Kafka,you are the world :38，partition是1
+   收到topic=World的消息，它的key是key :40，value是Kafka,you are the world :40，partition是0
+   ```
+
+   可以看到，分区1和分区0被再平衡给Consumer2消费了，Consumer1只消费分区2。
+
+5. 然后再启动Consumer3：
+
+   Consumer2：
+
+   ```
+   收到topic=World的消息，它的key是key :56，value是Kafka,you are the world :56，partition是1
+   收到topic=World的消息，它的key是key :60，value是Kafka,you are the world :60，partition是0
+   收到topic=World的消息，它的key是key :61，value是Kafka,you are the world :61，partition是1
+   收到topic=World的消息，它的key是key :63，value是Kafka,you are the world :63，partition是0
+   收到topic=World的消息，它的key是key :64，value是Kafka,you are the world :64，partition是1
+   收到topic=World的消息，它的key是key :65，value是Kafka,you are the world :65，partition是1
+   收到topic=World的消息，它的key是key :75，value是Kafka,you are the world :75，partition是1
+   收到topic=World的消息，它的key是key :78，value是Kafka,you are the world :78，partition是1
+   收到topic=World的消息，它的key是key :79，value是Kafka,you are the world :79，partition是1
+   收到topic=World的消息，它的key是key :81，value是Kafka,you are the world :81，partition是1
+   收到topic=World的消息，它的key是key :84，value是Kafka,you are the world :84，partition是1
+   ```
+
+   Consumer3：
+
+   ```
+   收到topic=World的消息，它的key是key :67，value是Kafka,you are the world :67，partition是0
+   收到topic=World的消息，它的key是key :69，value是Kafka,you are the world :69，partition是0
+   收到topic=World的消息，它的key是key :70，value是Kafka,you are the world :70，partition是0
+   收到topic=World的消息，它的key是key :72，value是Kafka,you are the world :72，partition是0
+   收到topic=World的消息，它的key是key :73，value是Kafka,you are the world :73，partition是0
+   收到topic=World的消息，它的key是key :76，value是Kafka,you are the world :76，partition是0
+   ```
+
+   可以看到，分区0被再平衡给Consumer3消费了，Consumer2只消费分区1。
+
+6. 再关掉Consumer3：
+
+   此时Consumer1和Consumer2还是照常消费分区2和分区1，等待45秒后，发现Consumer2突然消费了很多分区0的数据（这时因为Consumer3宕机后，Producer还是正常向3个分区发送数据），这时候分区1和分区0被再平衡给Consumer2消费了。随后Consumer2开始消费分区1和0的数据：
+
+   Consumer2：
+
+   ```java
+   收到topic=World的消息，它的key是key :191，value是Kafka,you are the world :191，partition是0
+   收到topic=World的消息，它的key是key :192，value是Kafka,you are the world :192，partition是0
+   收到topic=World的消息，它的key是key :193，value是Kafka,you are the world :193，partition是0
+   收到topic=World的消息，它的key是key :197，value是Kafka,you are the world :197，partition是0
+   收到topic=World的消息，它的key是key :199，value是Kafka,you are the world :199，partition是1
+   收到topic=World的消息，它的key是key :200，value是Kafka,you are the world :200，partition是1
+   收到topic=World的消息，它的key是key :201，value是Kafka,you are the world :201，partition是1
+   收到topic=World的消息，它的key是key :204，value是Kafka,you are the world :204，partition是0
+   收到topic=World的消息，它的key是key :205，value是Kafka,you are the world :205，partition是1
+   ```
+
+   
+
+结论：当消费者组内的Consumer数量变化时，这个消费者组的分区分配策略会**触发再平衡**，主要区分新增和减少：
+
+1. 新增：新Consumer会给coordinator发送JoinGroup命令，分区分配策略会触发**再平衡**。
+2. 减少：需要等45秒过后，coordinator认为这个Consumer下线，将它移出消费者组，分区分配策略会触发**再平衡**。
+3. 我猜测这个再平衡是基于coordinator和消费者组Leader进行的。
+
 # 分区分配与再平衡
 
 在Consumer可以配置
