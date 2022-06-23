@@ -29,7 +29,7 @@ public class ProducerTest {
         String msg = "Kafka,you are the world";
 
         producer.send(new ProducerRecord<>(
-                "World",msg
+                "World",0,"keykeykey",msg
         ), new Callback() {
             @Override
             public void onCompletion(RecordMetadata recordMetadata, Exception e) {

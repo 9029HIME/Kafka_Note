@@ -110,9 +110,32 @@ SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further detail
 Process finished with exit code 130 (interrupted by signal 2: SIGINT)
 ```
 
-
-
 ## 35-消费某个Partition
+
+```java
+/**
+ * 消费特定Partition的消息
+ */
+@Test
+public void testConsumerOnePartition(){
+    String topic = "World";
+    KafkaConsumer<String,String> kafkaConsumer = new KafkaConsumer<String, String>(properties);
+
+    ArrayList<TopicPartition> topicPartitions = new ArrayList<>();
+    topicPartitions.add(new TopicPartition(topic,0));
+    kafkaConsumer.assign(topicPartitions);
+
+    while (true){
+        ConsumerRecords<String, String> poll = kafkaConsumer.poll(Duration.ofSeconds(1));
+        for (ConsumerRecord<String, String> record : poll) {
+            String key = record.key();
+            String value = record.value();
+            int partition = record.partition();
+            System.out.println(String.format("收到topic=%s的消息，它的key是%s，value是%s，partition是%s",topic,key,value,partition));
+        }
+    }
+}
+```
 
 ## 36-消费者组消费某个主题
 
