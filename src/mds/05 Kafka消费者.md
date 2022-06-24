@@ -379,6 +379,42 @@ Topic: World    TopicId: 5aBCth8iQgKYDYQImj2Cyw PartitionCount: 3       Replicat
 
 # 分区分配与再平衡
 
-在Consumer可以配置
+基于知识点36可以知道，组内的消费者数量发生变化时，分区分配策略会发生再平衡。知识点32已经说明了：**分区分配策略是通过组Leader来确定的**。那么这个件策略有哪几种呢？kafka主要提供了4种：
 
-Range：再平衡后，直接将宕机消费者的消费分区移到其他存活的消费者上。
+1. Range
+2. RoundRobin
+3. Sticky
+4. CooperativeSticky
+
+可以在Consumer上配置partition.assignment.strategy来确定，1个Consumer可以配置多个分配策略，默认采用Range+CooperativeSticky。当这个Consumer被选为Leader时，会采用配置好的分配策略。
+
+## 37-Range策略：
+
+![img](https://user-images.githubusercontent.com/48977889/175465896-ecea8440-49b4-4b55-8eac-88d61a57e56b.png)
+
+1. Leader会将组内的Consumer进行排序，每个Consumer都有1个它的序号。
+
+2. 通过核心公式 partitions % consumers来确定每个Consumer消费几个分区。在Consumer倒序上优先划分，当出现除不尽的情况下，排序靠前的Consumer会多消费1个分区，直到Parition被分配完。
+
+   打个比方 7%3，还剩下1个partition。Leader会倒序给Consumer分配，先保证Consumer2消费5和6分区，再保证Consumer1消费3和4分区。最终剩下3个就让Consumer0消费。
+
+   打个比方 8%3，还剩下2个partition。Leader会先保证Consumer0消费6和7分区。然后将3-5分区交给Consumer1，0-2分区交给Consumer0，即使是多消费分区，**也是严格按照1个Consumer多消费1个分区来划分的。**
+
+3. 但是这种策略会引起数据倾斜，拿7%3来说，假如其他Topic也被划分成7个partition，那么在分配的时候Consumer0也会多消费1个分区。每N个这样的Topic，Consumer0就要比其他Consumer多消费N个分区。这样会增加Consumer0的消费压力，也就是数据倾斜现象。
+
+## 38-RoundRobin
+
+这个名字一听就知道是轮询，但是怎么轮询呢？比起Range，RoundRobin是**基于所有Topic的Partition进行分配的**。
+
+![img](https://user-images.githubusercontent.com/48977889/175468022-8b03cddd-21f4-44b1-b24b-e07307a37e27.png)
+
+1. Leader将所有Topic的Partition和**组内所有Consumer**列出来，使用hashcode分别对它们进行排序。
+2. 得到了有序的Partition和有序的Consumer后，Leader采用轮询算法将partition按照顺序对齐，一个一个分配给Consumer。
+
+## 39-Sticky
+
+# 消费者的Offset
+
+在知识点31已经知道了，Consumer会将消息offset提交coordinator所在的Broker的__consumer_offsets里，__consumer_offsets本质是1个Topic，里面采用KV结构存储，Key是group.id + 消费topic +消费的partition分区号，value是offset值。
+
+## 40-自动offset
