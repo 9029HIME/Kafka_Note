@@ -58,7 +58,7 @@ public class ProducerTest {
 
         while(true) {
 
-            Thread.sleep(500);
+            Thread.sleep(10000);
 
             producer.send(new ProducerRecord<>(
                     "World", String.format(key,tag), String.format(msg,tag)

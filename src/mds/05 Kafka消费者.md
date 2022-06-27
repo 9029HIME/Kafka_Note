@@ -2,7 +2,7 @@
 
 ![img](https://user-images.githubusercontent.com/48977889/174946914-56e1d9a3-ddb7-4409-b8de-6afaab9bf820.png)
 
-首先要明确一点：1个Partition不能被**同组的多个Consumer**消费，但是1个Consumer可以消费多个Partition。
+首先要明确一点：1个Partition不能被**同组的多个Consumer**消费，但是1个Consumer可以消费多个Partition。**并且！！！如果1个Parition被多个Consumer组消费了，那么同一个消息会被这些Consumer组共同消费，类似发布订阅的模式。 **
 
 Consumer对某个Partition的消费进度（offset），是保存在ZK里的，**当然新版本是维护在Broker的__consumer_offsets里，目的是减少Consumer和ZK进行冗余的IO交互。**
 
@@ -417,4 +417,21 @@ Topic: World    TopicId: 5aBCth8iQgKYDYQImj2Cyw PartitionCount: 3       Replicat
 
 在知识点31已经知道了，Consumer会将消息offset提交coordinator所在的Broker的__consumer_offsets里，__consumer_offsets本质是1个Topic，里面采用KV结构存储，Key是group.id + 消费topic +消费的partition分区号，value是offset值。
 
-## 40-自动offset
+## 40-自动提交offset
+
+基于Consumer配置进行延时提交，通过**enable.auto.commit**开启自动提交（默认为true），通过**auto.commit.interval.ms**确定自动提交的时间间隔（默认为5秒）。当Consumer拉取一批数据A，在下一次拉取时会检查数据批次A的间隔时间是否到达5秒，如果是，则提交数据批次A最大的偏移量。这种方式代码侵入性不强，但不能保证消息可靠性，因此不建议使用。
+
+## 41-手动提交
+
+手动提交又区分同步提交和异步提交，这里的同步异步和Producer发消息是类似的，但异步提交没有回调，因此在可靠性要求高的场景下需要同步提交。
+
+## 42-指定offset开始消费
+
+Kafka有个特性是**回溯消费**，可以指定某个offset，以这个offset为起点进行消费。
+
+## 43-指定时间开始消费
+
+底层也是依赖知识点42的指定offset消费，只不过是先通过timeindex文件定位偏移量，再从这个偏移量开始消费。
+
+
+

@@ -133,4 +133,25 @@ public class ConsumerTest {
             }
         }
     }
+
+
+    @Test
+    public void otherConsumer(){
+        String topic = "World";
+        properties.put(ConsumerConfig.GROUP_ID_CONFIG,"testOther");
+        KafkaConsumer<String,String> kafkaConsumer = new KafkaConsumer<String, String>(properties);
+        ArrayList<String> topics = new ArrayList<>();
+        topics.add(topic);
+        kafkaConsumer.subscribe(topics);
+
+        while (true){
+            ConsumerRecords<String, String> poll = kafkaConsumer.poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<String, String> record : poll) {
+                String key = record.key();
+                String value = record.value();
+                int partition = record.partition();
+                System.out.println(String.format("收到topic=%s的消息，它的key是%s，value是%s，partition是%s",topic,key,value,partition));
+            }
+        }
+    }
 }
