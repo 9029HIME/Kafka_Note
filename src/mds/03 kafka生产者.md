@@ -215,7 +215,7 @@ Producer的幂等性指的是Producer不论给Broker**重发**多少次**相同�
 6. 注意！！！Ps和Bs的比较是基于三元组缓存进行的，如果三元组缓存满了，Broker还接受到消息，就会将三元组缓存里最旧的一条消息清除，这条被清除的消息如果没有持久化，就不会响应ack了（如果被持久化了还是会ack，毕竟只是缓存里不存在而已，但消息还是被正常接受的）。
 
 7. 那么如果MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION＞5的话，比如6，Producer发送6个请求
-  Producer  →r1、r2、r3、r4、r5、r6→ Broker
+    Producer  →r1、r2、r3、r4、r5、r6→ Broker
 
   第6个请求来之前：
 
@@ -240,10 +240,10 @@ Broker在收到消息后会判断**Producer的SeqNumber**和**自己维护的Seq
 
 ## 17-消息的有序性
 
-Kafka只能保证同一个Partition内，message被消费是有序的，**如果消费者消费了多个Partition的message，kafka是不能保证Partition之间的数据是被有序消费的**。
+Kafka的有序性是基于幂等性展开的，Kafka只能保证同一个Partition内，message被消费是有序的，**如果消费者消费了多个Partition的message，kafka是不能保证Partition之间的数据是被有序消费的**。
 
-当然，即使同一个Partition保持有序性也是有条件的，首先要开启幂等性，其次需要将Producer参数max.in.flight.requests.per.connection设的值≤5。Broker会将Producer（1个Pid）在发往同1个Partition的**最近5个Request数据**缓存起来，并且Broker将缓存里的message刷盘之前会通过知识点16的SeqNumber进行排序，一旦发现后面的数据是乱序的，Broker就会等待顺序正确的message到来。当丢失的message被接收后，Broker会进行一次重排序，再刷盘。
-
-但是这个5是一个固定值（直接硬编码写死的），如果Producer将max.in.flight.requests.per.connection的值设为＞5，Producer发了6个未ack的Request过去，Broker会将最早到的那个Request清除掉，并向就有可能导致Broker排序失败，从而导致乱序（结合知识点9）：
+1：Server 端验证 batch 的 sequence number 值，不连续时，直接返回异常；**直到正确的Batch到来**。
+2：Client 端请求重试时，batch 在 reenqueue 时会根据 sequence number 值放到合适的位置（有序保证之一）；
+3：Sender 线程发送时，在遍历 queue 中的 batch 时，会检查这个 batch 是否是重试的 batch，如果是的话，只有这个 batch 是最旧的那个需要重试的 batch，才允许发送，否则本次发送跳过这个 Topic-Partition 数据的发送等待下次发送
 
 ![image](https://user-images.githubusercontent.com/48977889/170863651-53271903-02ac-416f-8be6-b00cd5bb8a60.png)
