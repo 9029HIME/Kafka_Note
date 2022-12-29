@@ -51,3 +51,11 @@
    2. 具有 controller 角色但不在 `controller.quorum.voters` 列表中的节点。
 
 **也就是说，在KRaft模式下，Broker采用Fetch的方式，从Leader和Voter定期拉取最新的元数据。Voter也通过Fetch的方式，从Leader定期拉取最新的元数据。**
+
+## __cluster_metadata
+
+在KRaft模式下，Kafka集群的元数据被存储在名为__cluster_metadata的Topic内，这个Topic只有1个Partition，它的Replica的数量 = Broker数量，只不过只有Leader和Voter才能维护这个Partition。
+
+![图4](markdown-img/06 Kafka的去ZooKeeper化：KRaft模式.assets/图4.png)
+
+对于Controller-Leader来说，它是__cluster_metadata的Leader，负责其所有写入，其他Controller则是Follower，定时从Leader拉取元数据的更改。
